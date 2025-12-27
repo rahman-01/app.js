@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Crypto Dashboard | Pro Edition</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0b0e11;
+            --card-bg: #181a20;
+            --text-main: #eaecef;
+            --text-dim: #848e9c;
+            --green: #02c076;
+            --red: #f84960;
+            --yellow: #f0b90b;
+            --border: #2b2f36;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+        }
+
+        header {
+            margin-bottom: 30px;
+            border-left: 4px solid var(--yellow);
+            padding-left: 15px;
+        }
+
+        h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+        p { color: var(--text-dim); margin: 5px 0 0 0; font-size: 14px; }
+
+        .market-table {
+            width: 100%;
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            border-collapse: collapse;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        th {
+            text-align: left;
+            padding: 16px;
+            color: var(--text-dim);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 18px 16px;
+            border-bottom: 1px solid var(--border);
+            font-size: 15px;
+            font-weight: 500;
+        }
+
+        .symbol-pair {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .symbol-main { color: var(--text-main); font-weight: 700; font-size: 16px; }
+        .symbol-sub { color: var(--text-dim); font-size: 12px; font-weight: 400; }
+
+        .price-up { color: var(--green); }
+        .price-down { color: var(--red); }
+
+        .badge {
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            display: inline-block;
+            min-width: 65px;
+            text-align: center;
+        }
+        .badge-up { background: rgba(2, 192, 118, 0.15); color: var(--green); }
+        .badge-down { background: rgba(248, 73, 96, 0.15); color: var(--red); }
+
+        /* Smooth Flash Animations */
+        @keyframes flash-green {
+            0% { background-color: rgba(2, 192, 118, 0.25); }
+            100% { background-color: transparent; }
+        }
+        @keyframes flash-red {
+            0% { background-color: rgba(248, 73, 96, 0.25); }
+            100% { background-color: transparent; }
+        }
+        .up-flash { animation: flash-green 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+        .down-flash { animation: flash-red 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+
+        .timestamp { font-family: 'Roboto Mono', monospace; color: var(--text-dim); font-size: 12px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Market Intelligence</h1>
+        <p id="status">Network: <span style="color: var(--green)">Connected</span></p>
+    </header>
+
+    <table class="market-table">
+        <thead>
+            <tr>
+                <th>Trading Pair</th>
+                <th>Last Price</th>
+                <th>24h Change</th>
+                <th style="text-align: right;">Update Time</th>
+            </tr>
+        </thead>
+        <tbody id="crypto-table">
+            </tbody>
+    </table>
+</div>
+
+<script>
+    const socket = io();
+    const tableBody = document.getElementById('crypto-table');
+    const koinRows = {};
+
+    socket.on('allPrices', (data) => {
+        let row = document.getElementById(`row-${data.symbol}`);
+        
+        if (!row) {
+            row = document.createElement('tr');
+            row.id = `row-${data.symbol}`;
+            row.innerHTML = `
+                <td>
+                    <div class="symbol-pair">
+                        <span class="symbol-main">${data.symbol.replace('USDT', '')}</span>
+                        <span class="symbol-sub">/USDT</span>
+                    </div>
+                </td>
+                <td id="price-${data.symbol}">$ 0.00</td>
+                <td><span id="pct-${data.symbol}" class="badge">-</span></td>
+                <td class="timestamp" id="time-${data.symbol}" style="text-align: right;">-</td>
+            `;
+            tableBody.appendChild(row);
+            koinRows[data.symbol] = { lastPrice: 0 };
+        }
+
+        const priceCell = document.getElementById(`price-${data.symbol}`);
+        const pctCell = document.getElementById(`pct-${data.symbol}`);
+        const timeCell = document.getElementById(`time-${data.symbol}`);
+
+        const newPrice = parseFloat(data.price.replace(/,/g, ''));
+        const oldPrice = koinRows[data.symbol].lastPrice;
+
+        // Update Content
+        priceCell.innerText = `$ ${data.price}`;
+        timeCell.innerText = data.timestamp;
+        
+        // Update Percentage Badge
+        const isNegative = data.changePercent.startsWith('-');
+        pctCell.innerText = (isNegative ? "" : "+") + data.changePercent;
+        pctCell.className = `badge ${isNegative ? 'badge-down' : 'badge-up'}`;
+
+        // Visual Flash & Color Logic
+        if (newPrice > oldPrice && oldPrice !== 0) {
+            row.classList.remove('up-flash', 'down-flash');
+            void row.offsetWidth; // Trigger reflow
+            row.classList.add('up-flash');
+            priceCell.className = 'price-up';
+        } else if (newPrice < oldPrice && oldPrice !== 0) {
+            row.classList.remove('up-flash', 'down-flash');
+            void row.offsetWidth; // Trigger reflow
+            row.classList.add('down-flash');
+            priceCell.className = 'price-down';
+        }
+
+        koinRows[data.symbol].lastPrice = newPrice;
+    });
+
+    socket.on('disconnect', () => {
+        document.getElementById('status').innerHTML = 'Network: <span style="color: var(--red)">Disconnected</span>';
+    });
+</script>
+
+</body>
+</html>
